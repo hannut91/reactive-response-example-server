@@ -1,5 +1,6 @@
 package com.example.demo
 
+import io.netty.util.concurrent.Promise
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -36,6 +37,8 @@ import java.time.Duration
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
+data class User(var name: String)
+
 @RestController
 class HelloController {
     var sink: FluxSink<DataBuffer>? = null
@@ -55,7 +58,7 @@ class HelloController {
         }
 
         httpReq.body.publishOn(Schedulers.parallel())
-            .subscribe({dataBuffer ->
+            .subscribe({ dataBuffer ->
                 val byteArray = ByteArray(dataBuffer.readableByteCount())
                     .also { dataBuffer.read(it) }
                 DataBufferUtils.release(dataBuffer)
@@ -71,6 +74,52 @@ class HelloController {
             })
 
         return httpRes.writeWith(flux)
+    }
+
+    // 응답이 Flow인 경우
+    @PostMapping("/response/flow")
+    fun responseFlow(): Flow<String> {
+        return flow {
+            for (i in 1..10) {
+                delay(1000)
+                emit("Hello from duplex communication! $i")
+            }
+        }
+    }
+
+    // 요청이 Flow이고 응답이 Flow이고 응답 content-type: applicatoin/json
+    @PostMapping("/request/flow")
+    fun requestFlow(
+        @RequestBody
+        userList: Flow<User>
+    ): Flow<User> {
+        return userList.flatMapConcat { user ->
+            println("received : $user")
+
+            user.name = user.name.uppercase()
+            flow {
+                emit(user)
+            }
+        }
+    }
+
+    // 요청이 Flow이고 응답이 Flow이고 응답 content-type: applicatoin/json
+    @PostMapping(
+        "/request/flow/xnd",
+        produces = [MediaType.APPLICATION_NDJSON_VALUE]
+    )
+    fun requestFlowXnd(
+        @RequestBody
+        userList: Flow<User>
+    ): Flow<User> {
+        return userList.flatMapConcat { user ->
+            println("received : $user")
+
+            user.name = user.name.uppercase()
+            flow {
+                emit(user)
+            }
+        }
     }
 
     @GetMapping("/hello", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
@@ -140,16 +189,6 @@ class HelloController {
             .map { "Hello from duplex communication! $it" }
     }
 
-    @GetMapping("/hello3")
-    fun hello3(): Flow<String> {
-        return flow {
-            for (i in 1..10) {
-                delay(1000)
-                emit("Hello from duplex communication! $i")
-            }
-        }
-    }
-
     @GetMapping("/hello4")
     fun hello4() = Flux.create {
         it.next("Hello")
@@ -196,8 +235,12 @@ class HelloController {
                         val b = ByteArray(dataBuffer.readableByteCount())
                             .also { dataBuffer.read(it) }
                         val text = String(b, StandardCharsets.UTF_8)
-                        sink3?.next(DefaultDataBufferFactory().wrap("resulttt"
-                            .toByteArray()))
+                        sink3?.next(
+                            DefaultDataBufferFactory().wrap(
+                                "resulttt"
+                                    .toByteArray()
+                            )
+                        )
                     }
                 }.then(mono {
                     sink3?.complete()
@@ -264,18 +307,18 @@ class HelloController {
 //                }
 //            }
 
-            return httpReq.body.publishOn(
-                Schedulers.parallel()
-            ).asFlow()
-                .flatMapConcat {dataBuffer ->
-                    val bytes = ByteArray(dataBuffer.readableByteCount())
-                    dataBuffer.read(bytes)
-                    DataBufferUtils.release(dataBuffer)
-                    println("data : ${String(bytes, StandardCharsets.UTF_8)}")
-                    flow {
-                        delay(500)
-                        emit("received ${String(bytes, StandardCharsets.UTF_8)}")
-                    }
+        return httpReq.body.publishOn(
+            Schedulers.parallel()
+        ).asFlow()
+            .flatMapConcat { dataBuffer ->
+                val bytes = ByteArray(dataBuffer.readableByteCount())
+                dataBuffer.read(bytes)
+                DataBufferUtils.release(dataBuffer)
+                println("data : ${String(bytes, StandardCharsets.UTF_8)}")
+                flow {
+                    delay(500)
+                    emit("received ${String(bytes, StandardCharsets.UTF_8)}")
                 }
+            }
     }
 }

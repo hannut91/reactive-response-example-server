@@ -10,7 +10,7 @@ client.on('error', (err) => {
 });
 
 const req = client.request({
-    // ':path': '/hello3',
+    // 여기 URL을 변경하시면 됩니다.
     ':path': '/response/mono/void',
     ':method': 'POST',
     'content-type': 'application/x-ndjson'
